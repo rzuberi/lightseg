@@ -1,2 +1,10 @@
 # lightseg
-Popular cell segmentation Python packages are quite heavy, this package aims to have the same performance, but lighter.
+
+A cell nuclei instance segmentation Machine Learning model distilled from CellPose.
+This goal of this repository is to be a lighter version of CellPose.
+Works as a double U-Net:
+- first predicts cell probabilites;
+- second predicts binary cell mask;
+- contour algorithm generates instances.
+
+The demo.py file gives a usage demonstration.
