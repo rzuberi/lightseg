@@ -2,13 +2,11 @@ from u_net import UNet
 import torch
 import numpy as np
 #from data import get_cellpose_data
-from data import get_random_crops, get_data_loaders
 from train_network import train_model
 from statistics import mean
 import os
 import math
-import cv2
-from scipy import spatial
+from skimage import measure
 
 class CellMaskModel():
 
@@ -56,7 +54,7 @@ class CellMaskModel():
                 x = x[:,:,channel]
             x, pad_val = self.expand_div_256(x)
             arrays = self.blockshaped(x,256,256)
-            masks = []
+            masks_crops = []
             inter_preds = []
             self.unet_cp.eval()
             self.unet_mask.eval()
@@ -64,18 +62,18 @@ class CellMaskModel():
             for i in range(len(arrays)):
                 x = torch.tensor(np.expand_dims(arrays[i],0)).type(torch.float32).to(self.device)
                 x = torch.unsqueeze(x,0)
-                cp_pred = self.unet_cp(x)
+                encFeats_cp, cp_pred = self.unet_cp(x)
                 inter_preds.append(cp_pred.cpu().detach().numpy())
-                mask_pred = self.unet_mask(cp_pred.to(self.device))
+                encFeats_mask, mask_pred = self.unet_mask(cp_pred.to(self.device))
                 #mask_pred = torch.sigmoid(mask_pred)
                 mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
-                masks.append(mask_tresh)
+                masks_crops.append(mask_tresh)
 
             cp = self.stack_img(inter_preds)
             cp = cp[pad_val:-pad_val, pad_val:-pad_val]
             cps.append(cp)
 
-            mask = self.stack_img(masks)
+            mask = self.stack_img(masks_crops)
             mask = mask[pad_val:-pad_val, pad_val:-pad_val]
             masks.append(mask)
             
@@ -90,10 +88,10 @@ class CellMaskModel():
         dice_coeffs = []
         for ((x_img,y_img),(x_cp,y_cp)) in zip(self.testLoader_img,self.testLoader_cp):
             (x_img,y_img) = (x_img.type(torch.float32).to(self.device), y_img.type(torch.float32).to(self.device))
-            cp_pred = self.unet_cp(x_img)
+            encFeats, cp_pred = self.unet_cp(x_img)
 
             (x_cp,y_cp) = (x_cp.type(torch.float32).to(self.device), y_cp.type(torch.float32).to(self.device))
-            mask_pred = self.unet_mask(cp_pred.to(self.device))
+            encFeats, mask_pred = self.unet_mask(cp_pred.to(self.device))
             mask_pred = torch.sigmoid(mask_pred)
             mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
             
@@ -158,40 +156,4 @@ class CellMaskModel():
         return 2. * intersection.sum() / (im1.sum() + im2.sum())
 
     def instance_seg(self,binary_mask):
-        binary_mask_copy = np.uint8(binary_mask.copy())
-        contours, hierarchy = cv2.findContours(binary_mask_copy, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        binary_mask_copy = cv2.drawContours(binary_mask_copy, contours, -1, (255,255,0), 2)
-
-        centers = []
-        for i in range(len(contours)):
-            M = cv2.moments(contours[i])
-            if M["m00"] != 0.0:
-                cX = int(M["m10"] / M["m00"])
-                cY = int(M["m01"] / M["m00"])
-                centers.append([cX,cY])
-        centers.reverse()
-        centers = np.array(centers)
-
-        instance_mask = np.zeros((1080,1080))
-        for i in range(binary_mask.shape[0]):
-            for j in range(binary_mask.shape[1]):
-                if binary_mask[j][i] == 1:
-                    instance_mask[j][i] = spatial.KDTree(centers).query([i,j])[1]
-
-        return instance_mask
-
-    
-
-if __name__ == '__main__':
-
-    #images_path = os.getcwd() + '/812_plate/'
-    #model = CellMaskModel(device="mps")
-    #model.train_models(images_path,num_epochs=20)
-
-    first_path = os.getcwd() + '/saved_model/cp_model'
-    second_path = os.getcwd() + '/saved_model/mask_model'
-
-    #model.get_data(images_path)
-    #model.save_model(first_path,second_path)
-    #model.import_model(first_path,second_path)
-    #print(model.dice_evaluate())
+        return measure.label(binary_mask, background=0,connectivity=1)
