@@ -5,11 +5,12 @@ import random
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+import numpy as np
 
 def import_images(images_path,normalisation=False,num_imgs=20):
-    images = [np.squeeze(tifffile.imread(images_path + str(i) + '.tif')) for i in range(num_imgs)]
+    images = np.array([np.squeeze(tifffile.imread(images_path + str(i) + '.tif')) for i in range(num_imgs)])
     if normalisation == True:
-        return [(image-np.min(image))/(np.max(image)-np.min(image)) for image in images]
+        images = np.array([(image-np.min(image))/(np.max(image)-np.min(image)) for image in images])
     return images
 
 def get_random_crops(images, masks, cellprobs):
