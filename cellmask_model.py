@@ -52,6 +52,7 @@ class CellMaskModel():
         masks_crops = []
         inter_preds = []
         encFeats_cps = []
+        encFeats_masks = []
         self.unet_cp.eval()
         self.unet_mask.eval()
 
@@ -65,7 +66,11 @@ class CellMaskModel():
             encFeats_cps.append(encFeats_cp_flattened)
 
             inter_preds.append(cp_pred.cpu().detach().numpy())
+            
             encFeats_mask, mask_pred = self.unet_mask(cp_pred.to(self.device))
+            encFeats_mask_lowest = encFeats_mask[2][0]
+            encFeats_mask_flattened = torch.mean(encFeats_mask_lowest, axis=0)
+            encFeats_masks.append(encFeats_mask_flattened)
 
             #mask_pred = torch.sigmoid(mask_pred)
             mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
@@ -85,7 +90,7 @@ class CellMaskModel():
         #encFeats = self.stack_img(encFeats_cp_flattened.detach().numpy())
 
         if encFeats:
-            return cp, mask, instance_mask, encFeats_cps, encFeats_mask
+            return cp, mask, instance_mask, encFeats_cps, encFeats_masks
         return cp, mask, instance_mask
 
     def eval(self,images,channel=0):
