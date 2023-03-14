@@ -7,8 +7,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 import numpy as np
 
-def import_images(images_path,normalisation=False,num_imgs=20):
-    images = np.array([np.squeeze(tifffile.imread(images_path + str(i) + '.tif')) for i in range(num_imgs)])
+def import_images(images_path,normalisation=False,num_imgs=20,format='.tif'):
+    images = np.array([np.squeeze(tifffile.imread(images_path + str(i) + format)) for i in range(num_imgs)])
     if normalisation == True:
         images = np.array([(image-np.min(image))/(np.max(image)-np.min(image)) for image in images])
     return images
