@@ -93,21 +93,30 @@ class CellMaskModel():
             return cp, mask, instance_mask, encFeats_cps, encFeats_masks
         return cp, mask, instance_mask
 
-    def eval(self,images,channel=0):
+    def eval(self,images,channel=0,encFeats=False):
         #TODO check if images have multiple channels, and remove them
         instance_masks = []
         masks = []
         cps = []
+        encFeats_cps = []
+        encFeats_masks = []
         if images.shape[0] == images.shape[1]:
             images = np.expand_dims(images,0)
         for x in images:
-            cp, mask, instance_mask = self.get_pred(x,channel)
+            if encFeats:
+                cp, mask, instance_mask, encFeats_cp, encFeats_mask = self.get_pred(x,channel,encFeats=encFeats)
+                encFeats_cps.append(encFeats_cp)
+                encFeats_masks.append(encFeats_mask)
+            else:
+                cp, mask, instance_mask = self.get_pred(x,channel,encFeats=encFeats)
             cps.append(cp)
             masks.append(mask)
             instance_masks.append(instance_mask)
-
-        return instance_masks, masks, cps
-
+        
+        if encFeats:
+            return cps, masks, instance_masks, encFeats_cps, encFeats_masks
+        return cps, masks, instance_masks
+    
     def dice_evaluate(self):
         self.unet_cp.eval()
         self.unet_mask.eval()
