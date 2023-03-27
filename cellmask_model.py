@@ -44,7 +44,7 @@ class CellMaskModel():
         #self.unet_mask = train_model(self.unet_mask,self.trainLoader_cp,self.testLoader_cp,learning_rate=learning_rate,num_epochs=num_epochs,device=self.device,loss="BCEwithLogits")
         self.unet_mask = train_model(self.unet_mask,self.trainLoader_cp,self.testLoader_cp,learning_rate=learning_rate,num_epochs=num_epochs,device=self.device,loss="dice")
 
-    def get_pred(self,x,channel,encFeats=False):
+    def get_pred(self,x,channel,encFeats=False,encFeats_list=False):
         if len(x.shape) == 3:
             x = x[:,:,channel]
         x, pad_val = self.expand_div_256(x)
@@ -52,6 +52,7 @@ class CellMaskModel():
         masks_crops = []
         inter_preds = []
         encFeats_cps = []
+        encFeats_cps_list = []
         encFeats_masks = []
         self.unet_cp.eval()
         self.unet_mask.eval()
@@ -62,6 +63,7 @@ class CellMaskModel():
 
             encFeats_cp, cp_pred = self.unet_cp(x)
             encFeats_cp_lowest = encFeats_cp[2][0]
+            encFeats_cps_list.append(encFeats_cp[2].detach().numpy())
             encFeats_cp_flattened = torch.mean(encFeats_cp_lowest, axis=0)
             encFeats_cps.append(encFeats_cp_flattened)
 
@@ -76,8 +78,6 @@ class CellMaskModel():
             mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
             masks_crops.append(mask_tresh)
         
-        print(len(inter_preds))
-        print(inter_preds[0].shape)
         cp = self.stack_img(inter_preds)
         cp = cp[pad_val:-pad_val, pad_val:-pad_val]
         
@@ -91,9 +91,11 @@ class CellMaskModel():
 
         if encFeats:
             return cp, mask, instance_mask, encFeats_cps, encFeats_masks
+        elif encFeats_list:
+            return cp, mask, instance_mask, encFeats_cps_list, encFeats_masks
         return cp, mask, instance_mask
 
-    def eval(self,images,channel=0,encFeats=False):
+    def eval(self,images,channel=0,encFeats=False,encFeats_list=False):
         #TODO check if images have multiple channels, and remove them
         instance_masks = []
         masks = []
@@ -103,17 +105,20 @@ class CellMaskModel():
         if images.shape[0] == images.shape[1]:
             images = np.expand_dims(images,0)
         for x in images:
-            if encFeats:
-                cp, mask, instance_mask, encFeats_cp, encFeats_mask = self.get_pred(x,channel,encFeats=encFeats)
+            if encFeats or encFeats_list:
+                cp, mask, instance_mask, encFeats_cp, encFeats_mask = self.get_pred(x,channel,encFeats=encFeats,encFeats_list=encFeats_list)
+                print('iofhef')
+                print('xxx',len(encFeats_cp))
                 encFeats_cps.append(encFeats_cp)
                 encFeats_masks.append(encFeats_mask)
             else:
+                print('elseifhof')
                 cp, mask, instance_mask = self.get_pred(x,channel,encFeats=encFeats)
             cps.append(cp)
             masks.append(mask)
             instance_masks.append(instance_mask)
         
-        if encFeats:
+        if encFeats or encFeats_list:
             return cps, masks, instance_masks, encFeats_cps, encFeats_masks
         return cps, masks, instance_masks
     
