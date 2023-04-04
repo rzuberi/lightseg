@@ -44,44 +44,84 @@ class CellMaskModel():
         #self.unet_mask = train_model(self.unet_mask,self.trainLoader_cp,self.testLoader_cp,learning_rate=learning_rate,num_epochs=num_epochs,device=self.device,loss="BCEwithLogits")
         self.unet_mask = train_model(self.unet_mask,self.trainLoader_cp,self.testLoader_cp,learning_rate=learning_rate,num_epochs=num_epochs,device=self.device,loss="dice")
 
-    def eval(self,images,channel=0):
+    def get_pred(self,x,channel,encFeats=False,encFeats_list=False):
+        if len(x.shape) == 3:
+            x = x[:,:,channel]
+        x, pad_val = self.expand_div_256(x)
+        arrays = self.blockshaped(x,256,256)
+        masks_crops = []
+        inter_preds = []
+        encFeats_cps = []
+        encFeats_cps_list = []
+        encFeats_masks = []
+        self.unet_cp.eval()
+        self.unet_mask.eval()
+
+        for i in range(len(arrays)):
+            x = torch.tensor(np.expand_dims(arrays[i],0)).type(torch.float32).to(self.device)
+            x = torch.unsqueeze(x,0)
+
+            encFeats_cp, cp_pred = self.unet_cp(x)
+            encFeats_cp_lowest = encFeats_cp[2][0]
+            encFeats_cps_list.append(encFeats_cp[2].detach().numpy())
+            encFeats_cp_flattened = torch.mean(encFeats_cp_lowest, axis=0)
+            encFeats_cps.append(encFeats_cp_flattened)
+
+            inter_preds.append(cp_pred.cpu().detach().numpy())
+            
+            encFeats_mask, mask_pred = self.unet_mask(cp_pred.to(self.device))
+            encFeats_mask_lowest = encFeats_mask[2][0]
+            encFeats_mask_flattened = torch.mean(encFeats_mask_lowest, axis=0)
+            encFeats_masks.append(encFeats_mask_flattened)
+
+            #mask_pred = torch.sigmoid(mask_pred)
+            mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
+            masks_crops.append(mask_tresh)
+        
+        cp = self.stack_img(inter_preds)
+        cp = cp[pad_val:-pad_val, pad_val:-pad_val]
+        
+
+        mask = self.stack_img(masks_crops)
+        mask = mask[pad_val:-pad_val, pad_val:-pad_val]
+        
+        instance_mask = self.instance_seg(mask)
+
+        #encFeats = self.stack_img(encFeats_cp_flattened.detach().numpy())
+
+        if encFeats:
+            return cp, mask, instance_mask, encFeats_cps, encFeats_masks
+        elif encFeats_list:
+            return cp, mask, instance_mask, encFeats_cps_list, encFeats_masks
+        return cp, mask, instance_mask
+
+    def eval(self,images,channel=0,encFeats=False,encFeats_list=False):
         #TODO check if images have multiple channels, and remove them
         instance_masks = []
         masks = []
         cps = []
+        encFeats_cps = []
+        encFeats_masks = []
+        if images.shape[0] == images.shape[1]:
+            images = np.expand_dims(images,0)
         for x in images:
-            if len(x.shape) == 3:
-                x = x[:,:,channel]
-            x, pad_val = self.expand_div_256(x)
-            arrays = self.blockshaped(x,256,256)
-            masks_crops = []
-            inter_preds = []
-            self.unet_cp.eval()
-            self.unet_mask.eval()
-
-            for i in range(len(arrays)):
-                x = torch.tensor(np.expand_dims(arrays[i],0)).type(torch.float32).to(self.device)
-                x = torch.unsqueeze(x,0)
-                encFeats_cp, cp_pred = self.unet_cp(x)
-                inter_preds.append(cp_pred.cpu().detach().numpy())
-                encFeats_mask, mask_pred = self.unet_mask(cp_pred.to(self.device))
-                #mask_pred = torch.sigmoid(mask_pred)
-                mask_tresh = np.where(np.squeeze(mask_pred.cpu().detach().numpy())>0.5,1,0)
-                masks_crops.append(mask_tresh)
-
-            cp = self.stack_img(inter_preds)
-            cp = cp[pad_val:-pad_val, pad_val:-pad_val]
+            if encFeats or encFeats_list:
+                cp, mask, instance_mask, encFeats_cp, encFeats_mask = self.get_pred(x,channel,encFeats=encFeats,encFeats_list=encFeats_list)
+                print('iofhef')
+                print('xxx',len(encFeats_cp))
+                encFeats_cps.append(encFeats_cp)
+                encFeats_masks.append(encFeats_mask)
+            else:
+                print('elseifhof')
+                cp, mask, instance_mask = self.get_pred(x,channel,encFeats=encFeats)
             cps.append(cp)
-
-            mask = self.stack_img(masks_crops)
-            mask = mask[pad_val:-pad_val, pad_val:-pad_val]
             masks.append(mask)
-            
-            instance_mask = self.instance_seg(mask)
             instance_masks.append(instance_mask)
-
-        return instance_masks, masks, cps
-
+        
+        if encFeats or encFeats_list:
+            return cps, masks, instance_masks, encFeats_cps, encFeats_masks
+        return cps, masks, instance_masks
+    
     def dice_evaluate(self):
         self.unet_cp.eval()
         self.unet_mask.eval()
@@ -113,7 +153,6 @@ class CellMaskModel():
         """
         Return an array of shape (n, nrows, ncols) where
         n * nrows * ncols = arr.size
-
         If arr is a 2D array, the returned array should look like n subblocks with
         each subblock preserving the "physical" layout of arr.
         """
@@ -124,10 +163,10 @@ class CellMaskModel():
                 .swapaxes(1,2)
                 .reshape(-1, nrows, ncols))
     
-    def stack_img(self, arrays):
+    def stack_img(self, arrays, colrow=256):
         it = int(math.sqrt(len(arrays)))
         preds = np.array(arrays)
-        preds_r = np.reshape(preds,(it,it,256,256))
+        preds_r = np.reshape(preds,(it,it,colrow,colrow))
         stacks = []
         for i in range(len(preds_r)):
             stacked = preds_r[i,0]
