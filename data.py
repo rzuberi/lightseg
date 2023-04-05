@@ -6,9 +6,20 @@ import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 import numpy as np
+from os import listdir
+from os.path import isfile, join
 
-def import_images(images_path,normalisation=False,num_imgs=20):
-    images = np.array([np.squeeze(tifffile.imread(images_path + str(i) + '.tif')) for i in range(num_imgs)])
+def import_images(images_path,normalisation=False,num_imgs=None):
+    #get all the names of the files in images_path
+    all_files = [f for f in listdir(images_path) if isfile(join(images_path, f))]
+    all_files = sorted(all_files, key=lambda x: int(x.split('.')[0]))
+
+    if num_imgs == None:
+        num_imgs = len(all_files)
+    elif num_imgs > len(all_files):
+        num_imgs = len(all_files)
+
+    images = np.array([np.squeeze(tifffile.imread(images_path + all_files[i])) for i in range(num_imgs)])
     if normalisation == True:
         images = np.array([(image-np.min(image))/(np.max(image)-np.min(image)) for image in images])
     return images
